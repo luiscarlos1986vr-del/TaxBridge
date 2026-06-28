@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Servicios Tributarios - TaxBridge
-Versión con API alternativa para Perú (sin token)
+Versión final con:
+- API alternativa para Perú (sin token)
+- Tasas actualizadas (15% Ecuador, 18% Perú)
+- Excepción: IVA reducido 8% para servicios turísticos en feriados (Ecuador)
+- Contexto de tasas: 15% general, 0% para bienes exentos
+- Detección de múltiples RUCs
+- Reglas de retención específicas
 """
 
 import os
@@ -23,21 +29,43 @@ if not MISTRAL_API_KEY:
 
 print("✅ Mistral inicializado correctamente")
 
-# ==================== TASAS ACTUALIZADAS MANUALMENTE ====================
+# ==================== TASAS Y EXCEPCIONES ====================
 TASAS_OFICIALES = {
     "ecuador": {
         "tasa": "15%",
-        "fecha_actualizacion": "2026-06-16",
+        "fecha_actualizacion": "2026-06-27",
         "fuente": "Circular SRI NAC-DGECCGC25-00000006 (26/12/2025) - Decreto Ejecutivo 470",
         "url_referencia": "https://www.sri.gob.ec",
-        "nota": "Tasa confirmada para 2026 según Circular del SRI"
+        "nota": "Tasa confirmada para 2026 según Circular del SRI",
+        "excepciones": {
+            "feriados_turismo": {
+                "tasa": "8%",
+                "descripcion": "IVA reducido para servicios turísticos durante feriados nacionales",
+                "base_legal": "Reforma tributaria para fomento del turismo (vigente desde 2024)",
+                "aplica": "Servicios de alojamiento, alimentación, transporte turístico, actividades recreativas"
+            },
+            "bienes_exentos": {
+                "tasa": "0%",
+                "descripcion": "Bienes y servicios exentos de IVA",
+                "base_legal": "Art. 54 LRTI y normativa conexa",
+                "aplica": "Canasta básica, medicinas, educación, exportaciones, transporte público, etc."
+            }
+        }
     },
     "peru": {
         "tasa": "18%",
-        "fecha_actualizacion": "2026-06-16",
+        "fecha_actualizacion": "2026-06-27",
         "fuente": "Ley Nº 32387 - Tasa IGV 16% + IPM 2%",
         "url_referencia": "https://www.sunat.gob.pe",
-        "nota": "Tasa vigente para 2026 (18% total: 16% IGV + 2% IPM)"
+        "nota": "Tasa vigente para 2026 (18% total: 16% IGV + 2% IPM)",
+        "excepciones": {
+            "operaciones_exentas": {
+                "tasa": "0%",
+                "descripcion": "Operaciones exentas de IGV",
+                "base_legal": "Ley del IGV y normativa conexa",
+                "aplica": "Exportaciones, servicios de transporte internacional, etc."
+            }
+        }
     }
 }
 
@@ -47,7 +75,7 @@ PAISES = {
         "nombre_pais": "Ecuador",
         "entidad_rectora": "SRI",
         "legislacion_base": "Código Tributario, LRTI",
-        "impuestos_clave": "IVA (15%), IR, ISD, IAE",
+        "impuestos_clave": "IVA (15% general, 8% turismo feriados, 0% exentos), IR, ISD, IAE",
         "url_oficial": "https://www.sri.gob.ec",
         "url_normativa": "https://www.sri.gob.ec"
     },
@@ -102,7 +130,6 @@ def consultar_ruc_peru(ruc, api_token=None):
         response.raise_for_status()
         data = response.json()
         
-        # Verificar que los datos sean válidos
         if data.get("razonSocial") or data.get("nombre"):
             return {
                 "exito": True,
@@ -226,13 +253,19 @@ RUC: {ruc}
 - Estado: {data.get('estado', 'No disponible')}
 - Tipo: {data.get('tipo', 'No disponible')}
 - Régimen: {data.get('regimen', 'No disponible')}
-- Obligado a contabilidad: {data.get('obligado_contabilidad', 'No disponible')}
-- Agente de Retención: {data.get('agente_retencion', 'No disponible')}
 """
             else:
                 info_proveedores += f"RUC: {ruc} - No se pudo obtener información: {data.get('error', 'Error desconocido')}\n"
     
-    # --- Instrucciones específicas para retenciones (corregidas) ---
+    # --- Excepciones especiales (Ecuador) ---
+    excepciones_texto = ""
+    if pais == "ecuador" and TASAS_OFICIALES.get("ecuador", {}).get("excepciones"):
+        excepciones = TASAS_OFICIALES["ecuador"]["excepciones"]
+        excepciones_texto = "\n**EXCEPCIONES ESPECIALES DE IVA EN ECUADOR:**\n"
+        for key, value in excepciones.items():
+            excepciones_texto += f"- {value['descripcion']}: **{value['tasa']}** - {value['aplica']} ({value['base_legal']})\n"
+    
+    # --- Instrucciones específicas para retenciones ---
     instrucciones_retencion = ""
     if pais == "ecuador":
         instrucciones_retencion = f"""
@@ -251,7 +284,7 @@ RUC: {ruc}
 **3. Plazos de declaración:**
 - Contribuyentes NO ESPECIALES: hasta el día **28** del mes siguiente al de la retención.
 - Contribuyentes ESPECIALES: plazos establecidos en el **calendario tributario del SRI** (generalmente los **primeros 5 días hábiles** del mes).
-- La empresa consultante {'ES' if es_contribuyente_especial else 'NO ES'} Contribuyente Especial, por lo que debe regirse por {'el calendario especial del SRI' if es_contribuyente_especial else 'el plazo general (día 28)'}.
+- La empresa consultante {'ES' if es_contribuyente_especial else 'NO ES'} Contribuyente Especial.
 """
     
     prompt = f"""
@@ -261,9 +294,11 @@ Eres un asesor tributario, laboral y societario experto en {config['nombre_pais'
 
 {info_proveedores}
 
-DATOS OFICIALES ACTUALES (verificados al 16/06/2026):
+DATOS OFICIALES ACTUALES (verificados al 27/06/2026):
 - {nombre_impuesto}: {tasa_actualizada}
 - Fuente: {url_tasa}
+
+{excepciones_texto}
 
 {instrucciones_retencion}
 
@@ -275,13 +310,14 @@ CONSULTA: "{pregunta}"
 
 INSTRUCCIONES PARA TU RESPUESTA:
 1. Usa la tasa de {nombre_impuesto} proporcionada ({tasa_actualizada}).
-2. Fundamenta en leyes de {config['nombre_pais']} (cita artículos).
-3. Menciona a {config['entidad_rectora']}.
-4. Si la consulta involucra retenciones, usa las reglas específicas detalladas arriba.
-5. Sé claro y conciso. Usa viñetas.
-6. Incluye plazos y montos (menciona los plazos especiales si el consultante es Contribuyente Especial).
-7. Si no estás seguro, sugiere consultar a un contador.
-8. Finaliza con: "🔗 Verifica en: {config['url_normativa']}"
+2. SI la consulta es sobre servicios turísticos en feriados, aplica el 8% de IVA.
+3. SI la consulta es sobre bienes exentos (canasta básica, medicinas, educación, etc.), aplica 0%.
+4. En cualquier otro caso, aplica la tasa general del {tasa_actualizada}.
+5. Fundamenta en leyes de {config['nombre_pais']} (cita artículos).
+6. Menciona a {config['entidad_rectora']}.
+7. Sé claro y conciso. Usa viñetas.
+8. Incluye plazos y montos si aplica.
+9. Finaliza con: "🔗 Verifica en: {config['url_normativa']}"
 
 Respuesta:
 """
@@ -369,7 +405,6 @@ def consultar_tributario(pregunta, pais, ruc_empresa=None, temperatura=0.1):
         PERU_API_TOKEN = os.getenv("PERU_API_TOKEN")
         
         if ruc_empresa:
-            # Ahora consultar_ruc_peru no requiere token obligatorio
             datos_empresa = consultar_ruc_peru(ruc_empresa, PERU_API_TOKEN)
             if datos_empresa.get("exito"):
                 print(f"✅ Datos empresa: {datos_empresa['razon_social']}")
