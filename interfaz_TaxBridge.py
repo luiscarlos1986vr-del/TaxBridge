@@ -58,13 +58,13 @@ with st.sidebar:
                 if pais == "ecuador":
                     datos = consultar_ruc_ecuador(ruc_input)
                 elif pais == "peru":
+                    # Ahora la API no necesita token obligatorio
                     PERU_API_TOKEN = os.getenv("PERU_API_TOKEN")
-                    if PERU_API_TOKEN:
-                        datos = consultar_ruc_peru(ruc_input, PERU_API_TOKEN)
-                    else:
-                        datos = {"exito": False, "error": "Falta token de API para Perú"}
-                else:
-                    datos = {"exito": False, "error": "País no soportado"}
+                    datos = consultar_ruc_peru(ruc_input, PERU_API_TOKEN)
+                    if not datos.get("exito"):
+                        # Si falla, mostrar mensaje más amigable
+                        if "No se pudo obtener" in datos.get("error", ""):
+                            datos["error"] = "No se pudo obtener información del RUC. La API gratuita puede tener límites. Verifica que el RUC sea correcto."
                 
                 if datos and datos.get("exito"):
                     st.success("✅ RUC encontrado")
