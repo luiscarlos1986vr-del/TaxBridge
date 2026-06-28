@@ -304,7 +304,7 @@ DATOS OFICIALES ACTUALES (verificados al 27/06/2026):
 
 REGLAS GENERALES:
 - Solo responder consultas tributarias, laborales (con SUNAFIL/IESS) o societarias.
-- Si NO es tributaria, responde: "Gracias por utilizar este servicio, sin embargo no puedo contestar tu consulta, estoy diseñado solo para consultas tributarias, laborales y societarias"
+- Si NO es tributaria, responde: "Gracias por utilizar este servicio, sin embargo no puedo contestar tu consulta, estoy diseñado solo para consultas tributarias, laborales y societarias específicamente para Ecuador y Perú."
 
 CONSULTA: "{pregunta}"
 
