@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Servicios Tributarios - TaxBridge
-Versión con detección de múltiples RUC y parametrización avanzada
+Versión con API alternativa para Perú (sin token)
 """
 
 import os
@@ -72,7 +72,6 @@ def consultar_ruc_ecuador(ruc):
         response.raise_for_status()
         data = response.json()
         
-        # Mapeo de campos
         return {
             "exito": True,
             "ruc": ruc,
@@ -90,26 +89,99 @@ def consultar_ruc_ecuador(ruc):
         print(f"⚠️ Error al consultar RUC {ruc}: {e}")
         return {"exito": False, "error": str(e)}
 
-def consultar_ruc_peru(ruc, api_token):
+# ==================== CONSULTA DE RUC PERÚ (SIN TOKEN) ====================
+def consultar_ruc_peru(ruc, api_token=None):
     """
-    Consulta la información de un RUC en Perú usando la API de PeruAPI.
+    Consulta la información de un RUC en Perú usando múltiples APIs gratuitas.
+    NO requiere token de API.
     """
-    url = f"https://peruapi.com/api/ruc/{ruc}?api_token={api_token}"
+    # Intento 1: apis.net.pe (gratuita, sin token)
     try:
+        url = f"https://api.apis.net.pe/v1/ruc?numero={ruc}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        return {
-            "exito": True,
-            "ruc": ruc,
-            "razon_social": data.get("razon_social", "No disponible"),
-            "estado": data.get("estado", "No disponible"),
-            "tipo": data.get("tipo_empresa", "No disponible"),
-            "regimen": data.get("regimen", "No disponible"),
-            "fuente": "PeruAPI (SUNAT)"
-        }
+        
+        # Verificar que los datos sean válidos
+        if data.get("razonSocial") or data.get("nombre"):
+            return {
+                "exito": True,
+                "ruc": ruc,
+                "razon_social": data.get("razonSocial") or data.get("nombre", "No disponible"),
+                "estado": data.get("estado", "No disponible"),
+                "tipo": data.get("tipo", data.get("tipo_empresa", "No disponible")),
+                "regimen": data.get("regimen", "No disponible"),
+                "fuente": "apis.net.pe (gratuita)"
+            }
     except Exception as e:
-        return {"exito": False, "error": str(e)}
+        print(f"⚠️ Error en API 1 (apis.net.pe): {e}")
+    
+    # Intento 2: ruc.com.pe (gratuita, sin token)
+    try:
+        url = f"https://ruc.com.pe/api/ruc/{ruc}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("nombre") or data.get("razon_social"):
+            return {
+                "exito": True,
+                "ruc": ruc,
+                "razon_social": data.get("nombre") or data.get("razon_social", "No disponible"),
+                "estado": data.get("estado", "No disponible"),
+                "tipo": data.get("tipo", "No disponible"),
+                "regimen": data.get("regimen", "No disponible"),
+                "fuente": "ruc.com.pe (gratuita)"
+            }
+    except Exception as e:
+        print(f"⚠️ Error en API 2 (ruc.com.pe): {e}")
+    
+    # Intento 3: api.sunat.cloud (gratuita, sin token)
+    try:
+        url = f"https://api.sunat.cloud/ruc/{ruc}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("nombre") or data.get("razon_social"):
+            return {
+                "exito": True,
+                "ruc": ruc,
+                "razon_social": data.get("nombre") or data.get("razon_social", "No disponible"),
+                "estado": data.get("estado", "No disponible"),
+                "tipo": data.get("tipo", "No disponible"),
+                "regimen": data.get("regimen", "No disponible"),
+                "fuente": "api.sunat.cloud (gratuita)"
+            }
+    except Exception as e:
+        print(f"⚠️ Error en API 3 (sunat.cloud): {e}")
+    
+    # Intento 4: PeruAPI (con token si existe)
+    if api_token:
+        try:
+            url = f"https://peruapi.com/api/ruc/{ruc}?api_token={api_token}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("razon_social"):
+                return {
+                    "exito": True,
+                    "ruc": ruc,
+                    "razon_social": data.get("razon_social", "No disponible"),
+                    "estado": data.get("estado", "No disponible"),
+                    "tipo": data.get("tipo_empresa", "No disponible"),
+                    "regimen": data.get("regimen", "No disponible"),
+                    "fuente": "PeruAPI (con token)"
+                }
+        except Exception as e:
+            print(f"⚠️ Error en API 4 (PeruAPI): {e}")
+    
+    # Si todo falla
+    return {
+        "exito": False,
+        "error": "No se pudo obtener información del RUC. Verifica que sea correcto."
+    }
 
 # ==================== OBTENER TASA ====================
 def obtener_tasa_actualizada(pais):
@@ -216,7 +288,7 @@ Respuesta:
     return prompt
 
 # ==================== CONSULTA A MISTRAL ====================
-def consultar_mistral(prompt, temperatura=0.0):
+def consultar_mistral(prompt, temperatura=0.1):
     inicio = time.time()
     
     url = "https://api.mistral.ai/v1/chat/completions"
@@ -293,13 +365,20 @@ def consultar_tributario(pregunta, pais, ruc_empresa=None, temperatura=0.1):
                 datos_proveedores[ruc] = {"exito": False, "error": datos.get("error", "Error desconocido")}
     
     elif pais == "peru":
+        # Obtener token de PeruAPI (opcional, solo si existe)
         PERU_API_TOKEN = os.getenv("PERU_API_TOKEN")
-        if not PERU_API_TOKEN:
-            return {"exito": False, "error": "Falta PERU_API_TOKEN en .env"}
         
         if ruc_empresa:
+            # Ahora consultar_ruc_peru no requiere token obligatorio
             datos_empresa = consultar_ruc_peru(ruc_empresa, PERU_API_TOKEN)
-        for ruc in rucs_encontrados:
+            if datos_empresa.get("exito"):
+                print(f"✅ Datos empresa: {datos_empresa['razon_social']}")
+            else:
+                print(f"⚠️ Error consultando RUC empresa: {datos_empresa.get('error')}")
+        
+        # Detectar RUCs de Perú (11 dígitos)
+        rucs_peru = re.findall(r'\b\d{11}\b', pregunta)
+        for ruc in rucs_peru:
             if ruc_empresa and ruc == ruc_empresa:
                 continue
             datos = consultar_ruc_peru(ruc, PERU_API_TOKEN)
