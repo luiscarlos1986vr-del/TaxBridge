@@ -64,7 +64,9 @@ with st.sidebar:
                     if not datos.get("exito"):
                         # Si falla, mostrar mensaje más amigable
                         if "No se pudo obtener" in datos.get("error", ""):
-                            datos["error"] = "No se pudo obtener información del RUC. La API gratuita puede tener límites. Verifica que el RUC sea correcto."
+                            datos["error"] = "No se pudo obtener información del RUC. Verifica que sea correcto."
+                else:
+                    datos = {"exito": False, "error": "País no soportado"}
                 
                 if datos and datos.get("exito"):
                     st.success("✅ RUC encontrado")
@@ -90,7 +92,7 @@ with st.sidebar:
                     
                     st.session_state.datos_empresa = datos
                 else:
-                    st.error(f"❌ No se pudo obtener información: {datos.get('error', 'Error desconocido')}")
+                    st.error(f"❌ {datos.get('error', 'Error desconocido')}")
                     st.session_state.datos_empresa = None
         else:
             st.warning(f"⚠️ Ingresa {longitud_esperada} dígitos numéricos")
